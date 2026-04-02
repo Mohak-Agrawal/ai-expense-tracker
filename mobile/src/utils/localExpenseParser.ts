@@ -7,7 +7,7 @@ const CATEGORY_RULES: { category: ExpenseCategory; pattern: RegExp }[] = [
   { category: 'Health', pattern: /(medicine|doctor|pharmacy|clinic|health|gym)/i },
   { category: 'Travel', pattern: /(hotel|trip|travel|flight|tour|vacation|holiday|airport)/i },
   { category: 'Shopping', pattern: /(amazon|flipkart|shopping|shoes|shirt|clothes|mall|store|bought)/i },
-  { category: 'Food & Dining', pattern: /(restaurant|cafe|coffee|lunch|dinner|breakfast|food|meal|grocer|grocery)/i },
+  { category: 'Food & Dining', pattern: /(restaurant|cafe|coffee|tea|lunch|dinner|breakfast|food|meal|grocer|grocery|burger|pizza|sandwich|snack|snacks|fries|shake|juice|biryani|chai)/i },
 ];
 
 function detectCurrency(input: string): string {

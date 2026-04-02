@@ -17,6 +17,15 @@ describe('localExpenseParser', () => {
     expect(parseLocalExpenseInput('coffee with team')).toBeNull();
   });
 
+  it('classifies burger-like food terms as Food & Dining', () => {
+    const payload = parseLocalExpenseInput('burger 200');
+
+    expect(payload).toMatchObject({
+      amount: 200,
+      category: 'Food & Dining',
+    });
+  });
+
   it('builds a stable original input string for edited expenses', () => {
     expect(buildOriginalInput({
       amount: 860,

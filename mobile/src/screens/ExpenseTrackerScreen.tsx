@@ -8,7 +8,7 @@ import {
   FlatList,
   ActivityIndicator,
   StyleSheet,
-  SafeAreaView,
+
   KeyboardAvoidingView,
   Keyboard,
   Platform,
@@ -26,6 +26,7 @@ import {
   updateExpenseEntry,
 } from '../services/expenseRepository';
 import { Expense, ExpenseSnapshot } from '../types/index';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -51,6 +52,7 @@ export default function ExpenseTrackerScreen() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
+  const [showAll, setShowAll] = useState(false); // New state for Load More
   const [pendingCount, setPendingCount] = useState(0);
   const [isOffline, setIsOffline] = useState(false);
   const [lastSyncError, setLastSyncError] = useState<string | null>(null);
@@ -178,14 +180,18 @@ export default function ExpenseTrackerScreen() {
     })
     .reduce((sum, e) => sum + e.amount, 0);
 
+  // Pagination logic
+  const displayedExpenses = showAll ? expenses : expenses.slice(0, 5);
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.backgroundOrbLarge} />
-      <View style={styles.backgroundOrbSmall} />
-      <StatusBar barStyle="dark-content" backgroundColor="#F7EFE5" />
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.backgroundOrbLarge} />
+        <View style={styles.backgroundOrbSmall} />
+        <StatusBar barStyle="dark-content" backgroundColor="#FAF3EA" />
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <FlatList
-          data={expenses}
+          data={displayedExpenses}
           keyExtractor={item => String(item.id)}
           refreshing={refreshing}
           onRefresh={() => loadExpenses(true)}
@@ -193,62 +199,70 @@ export default function ExpenseTrackerScreen() {
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
             <View>
-              {/* Top bar */}
+              {/* Elevated Hero Card */}
               <View style={styles.heroCard}>
                 <View style={styles.topbar}>
                   <View>
                     <Text style={styles.greeting}>{getGreeting()}, Mohak</Text>
-                    <Text style={styles.appTitle}>Expense Tracker</Text>
-                    <Text style={styles.heroSubtitle}>Natural language in front, durable local-first sync underneath.</Text>
+                    <Text style={styles.appTitle}>Overview</Text>
                   </View>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>M</Text>
+                  <View style={styles.avatarBorder}>
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>M</Text>
+                    </View>
                   </View>
                 </View>
 
-                <View style={styles.summaryStrip}>
-                  <View style={styles.statCardAccent}>
-                    <Text style={styles.statLabelLight}>Today</Text>
-                    <Text style={styles.statValueLight}>
-                      ₹{totalToday.toLocaleString('en-IN')}
-                    </Text>
+                <View style={styles.heroMainStat}>
+                  <Text style={styles.heroLabel}>Total this month</Text>
+                  <Text style={styles.heroValue}>
+                    <Text style={styles.currencySymbol}>₹</Text>
+                    {totalMonth.toLocaleString('en-IN')}
+                  </Text>
+                </View>
+
+                <View style={styles.heroSubStats}>
+                  <View style={styles.subStatContainer}>
+                    <View style={styles.dotIndicator} />
+                    <View>
+                      <Text style={styles.subStatLabel}>Today</Text>
+                      <Text style={styles.subStatValue}>₹{totalToday.toLocaleString('en-IN')}</Text>
+                    </View>
                   </View>
-                  <View style={styles.statCardSoft}>
-                    <Text style={styles.statLabel}>This month</Text>
-                    <Text style={styles.statValue}>
-                      ₹{totalMonth.toLocaleString('en-IN')}
-                    </Text>
-                  </View>
-                  <View style={styles.statCardSoft}>
-                    <Text style={styles.statLabel}>Entries</Text>
-                    <Text style={styles.statValue}>{expenses.length}</Text>
+                  <View style={styles.subStatDivider} />
+                  <View style={styles.subStatContainer}>
+                    <View style={[styles.dotIndicator, { backgroundColor: '#F4C38F' }]} />
+                    <View>
+                      <Text style={styles.subStatLabel}>Entries</Text>
+                      <Text style={styles.subStatValue}>{expenses.length}</Text>
+                    </View>
                   </View>
                 </View>
               </View>
 
+              {/* Sync Banner */}
               {(pendingCount > 0 || isOffline || lastSyncError) && (
                 <View style={styles.syncBanner}>
-                  <View>
-                    <Text style={styles.syncBannerTitle}>
-                      {isOffline ? 'Offline mode' : 'Sync in progress'}
-                    </Text>
-                    <Text style={styles.syncBannerText}>
-                      {pendingCount > 0
-                        ? `${pendingCount} change${pendingCount === 1 ? '' : 's'} waiting to sync.`
-                        : lastSyncError || 'Trying to reconnect.'}
-                    </Text>
-                  </View>
-                  {pendingCount > 0 && (
-                    <View style={styles.syncPill}>
-                      <Text style={styles.syncPillText}>{pendingCount}</Text>
+                  <View style={styles.syncBannerContent}>
+                    <Text style={styles.syncBannerEmoji}>{isOffline ? '📡' : '🔄'}</Text>
+                    <View style={styles.syncBannerTextColumn}>
+                      <Text style={styles.syncBannerTitle}>
+                        {isOffline ? 'Offline mode active' : 'Syncing changes...'}
+                      </Text>
+                      <Text style={styles.syncBannerText}>
+                        {pendingCount > 0
+                          ? `${pendingCount} change${pendingCount === 1 ? '' : 's'} waiting to safely sync.`
+                          : lastSyncError || 'Reconnecting to the server.'}
+                      </Text>
                     </View>
-                  )}
+                  </View>
                 </View>
               )}
 
-              {/* Input card */}
-              <View style={styles.inputCard}>
-                <Text style={styles.inputHint}>ADD EXPENSE</Text>
+        {/* PREMIUM FULL-BORDER Input Section */}
+              <View style={styles.inputSection}>
+                <Text style={styles.inputHint}>✨ ADD EXPENSE</Text>
+                
                 <View style={[styles.inputRow, isInputFocused && styles.inputRowFocused]}>
                   <TextInput
                     style={styles.textInput}
@@ -256,11 +270,13 @@ export default function ExpenseTrackerScreen() {
                     onChangeText={setInput}
                     onFocus={() => setIsInputFocused(true)}
                     onBlur={() => setIsInputFocused(false)}
-                    placeholder='e.g. "Uber to airport 450"'
-                    placeholderTextColor="#AEAEB2"
+                    placeholder='e.g. "Dinner at Restaurant 1800"'
+                    placeholderTextColor="#C4A892"
                     multiline
                     maxLength={200}
                     returnKeyType="done"
+                    underlineColorAndroid="transparent"
+
                     editable={!loading}
                   />
                   <Pressable
@@ -273,14 +289,14 @@ export default function ExpenseTrackerScreen() {
                     disabled={!input.trim() || loading}
                   >
                     {loading
-                      ? <ActivityIndicator color="#EEEDFE" size="small" />
+                      ? <ActivityIndicator color="#FFF8EE" size="small" />
                       : <Text style={styles.addBtnText}>Add</Text>
                     }
                   </Pressable>
                 </View>
 
                 <View style={styles.chips}>
-                  {['Uber 350', 'Coffee 180', 'Netflix 649', 'Groceries 1200', 'Medicine 850'].map(ex => (
+                  {['Uber 350', 'Coffee 180', 'Netflix 649'].map(ex => (
                     <Pressable
                       key={ex}
                       style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
@@ -293,19 +309,10 @@ export default function ExpenseTrackerScreen() {
                 </View>
               </View>
 
-              {/* Success card */}
-              {latestExpense && (
-                <SuccessCard
-                  expense={latestExpense}
-                  onDismiss={() => setLatestExpense(null)}
-                />
-              )}
-
               {/* Section header */}
               {expenses.length > 0 && (
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Recent</Text>
-                  <Text style={styles.sectionCount}>{expenses.length} entries</Text>
+                  <Text style={styles.sectionTitle}>Recent Activity</Text>
                 </View>
               )}
             </View>
@@ -320,16 +327,30 @@ export default function ExpenseTrackerScreen() {
           )}
           ListEmptyComponent={
             initialLoad ? (
-              <View>
+              <View style={styles.skeletonWrapper}>
                 {[1, 2, 3, 4].map(i => <SkeletonItem key={i} />)}
               </View>
             ) : (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyEmoji}>💸</Text>
-                <Text style={styles.emptyTitle}>No expenses yet</Text>
-                <Text style={styles.emptySubtitle}>Describe what you spent above, even if you are temporarily offline.</Text>
+                <View style={styles.emptyIconCircle}>
+                  <Text style={styles.emptyEmoji}>☕</Text>
+                </View>
+                <Text style={styles.emptyTitle}>A fresh start</Text>
+                <Text style={styles.emptySubtitle}>Your entries will be stored locally even if you drop offline.</Text>
               </View>
             )
+          }
+          ListFooterComponent={
+            expenses.length > 5 && !showAll ? (
+              <View style={styles.footerContainer}>
+                <Pressable
+                  style={({ pressed }) => [styles.loadMoreBtn, pressed && styles.loadMoreBtnPressed]}
+                  onPress={() => setShowAll(true)}
+                >
+                  <Text style={styles.loadMoreText}>Load {expenses.length - 5} more entries</Text>
+                </Pressable>
+              </View>
+            ) : null
           }
         />
       </KeyboardAvoidingView>
@@ -343,6 +364,13 @@ export default function ExpenseTrackerScreen() {
         />
       )}
 
+      {latestExpense && (
+        <SuccessCard
+          expense={latestExpense}
+          onDismiss={() => setLatestExpense(null)}
+        />
+      )}
+
       <EditExpenseSheet
         expense={editingExpense}
         visible={editingExpense !== null}
@@ -351,201 +379,222 @@ export default function ExpenseTrackerScreen() {
         onSave={handleEditSave}
       />
     </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F7EFE5' },
+  safe: { flex: 1, backgroundColor: '#FAF3EA', overflow: 'hidden' },
   flex: { flex: 1 },
-  listContent: { paddingBottom: 40, paddingTop: 10 },
+  listContent: { paddingBottom: 50, paddingTop: 10 },
 
   backgroundOrbLarge: {
     position: 'absolute',
-    top: -80,
-    right: -40,
-    width: 220,
-    height: 220,
-    borderRadius: 999,
-    backgroundColor: 'rgba(199, 133, 89, 0.16)',
+    top: -100,
+    right: -50,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: '#F3E1CF',
+    opacity: 0.6,
   },
   backgroundOrbSmall: {
     position: 'absolute',
-    top: 120,
-    left: -40,
-    width: 140,
-    height: 140,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255, 219, 184, 0.4)',
+    top: 150,
+    left: -60,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: '#FCE7D0',
+    opacity: 0.5,
   },
 
   heroCard: {
-    marginHorizontal: 18,
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 18,
-    borderRadius: 28,
-    backgroundColor: '#2B180B',
-    shadowColor: '#2B180B',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.18,
+    marginHorizontal: 16,
+    padding: 24,
+    borderRadius: 32,
+    backgroundColor: '#331E12',
+    shadowColor: '#331E12',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.15,
     shadowRadius: 24,
-    elevation: 5,
+    elevation: 8,
   },
-
   topbar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingBottom: 4,
+    alignItems: 'center',
+    paddingBottom: 24,
   },
-  greeting: { fontSize: 13, color: '#D4B89D' },
-  appTitle: { fontSize: 28, fontWeight: '700', color: '#FFF5E9', marginTop: 4, letterSpacing: -0.6 },
-  heroSubtitle: { fontSize: 13, color: '#DABB9D', marginTop: 8, maxWidth: 240, lineHeight: 18 },
+  greeting: { fontSize: 14, color: '#C9A98E', fontWeight: '500' },
+  appTitle: { fontSize: 26, fontWeight: '700', color: '#FFF5E9', marginTop: 2, letterSpacing: -0.5 },
+  avatarBorder: {
+    padding: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 24,
+  },
   avatar: {
     width: 42, height: 42, borderRadius: 21,
     backgroundColor: '#F4C38F',
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { fontSize: 15, fontWeight: '700', color: '#4B2A11' },
+  avatarText: { fontSize: 16, fontWeight: '700', color: '#4B2A11' },
 
-  summaryStrip: {
+  heroMainStat: { marginBottom: 24 },
+  heroLabel: { fontSize: 13, color: '#A6866D', fontWeight: '600', letterSpacing: 0.5, marginBottom: 8 },
+  heroValue: { fontSize: 44, fontWeight: '700', color: '#FFFDF8', letterSpacing: -1 },
+  currencySymbol: { fontSize: 32, color: '#D49365', fontWeight: '600' },
+
+  heroSubStats: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 18,
-  },
-  statCardAccent: {
-    flex: 1,
-    backgroundColor: '#E98B56',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 20,
-    padding: 12,
+    padding: 16,
   },
-  statCardSoft: {
-    flex: 1,
-    backgroundColor: '#FFF5E8',
-    borderRadius: 20,
-    padding: 12,
-  },
-  statLabelLight: { fontSize: 11, color: '#FFE6D2', marginBottom: 4 },
-  statValueLight: { fontSize: 16, fontWeight: '700', color: '#FFFDF8' },
-  statLabel: { fontSize: 11, color: '#9B765A', marginBottom: 4 },
-  statValue: { fontSize: 15, fontWeight: '700', color: '#2B180B' },
+  subStatContainer: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dotIndicator: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#E98B56' },
+  subStatLabel: { fontSize: 12, color: '#A6866D', marginBottom: 2 },
+  subStatValue: { fontSize: 16, fontWeight: '700', color: '#FFF5E9' },
+  subStatDivider: { width: 1, height: 24, backgroundColor: 'rgba(255, 255, 255, 0.1)', marginHorizontal: 16 },
 
   syncBanner: {
-    marginHorizontal: 18,
-    marginTop: 14,
-    marginBottom: 10,
-    borderRadius: 20,
-    backgroundColor: '#FCE7D0',
-    borderWidth: 1,
-    borderColor: '#EDCFAD',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  syncBannerTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#6A4327',
-    marginBottom: 4,
-  },
-  syncBannerText: {
-    fontSize: 12,
-    color: '#8B6042',
-    maxWidth: 250,
-  },
-  syncPill: {
-    minWidth: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2B180B',
-  },
-  syncPillText: {
-    color: '#FFF5E8',
-    fontWeight: '700',
-  },
-
-  inputCard: {
-    backgroundColor: '#FFF9F1',
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
     borderRadius: 24,
-    marginHorizontal: 18,
-    marginBottom: 14,
-    marginTop: 4,
-    padding: 16,
+    backgroundColor: 'rgba(233, 139, 86, 0.1)',
     borderWidth: 1,
-    borderColor: '#F0DECA',
+    borderColor: 'rgba(233, 139, 86, 0.2)',
+    padding: 16,
+  },
+  syncBannerContent: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  syncBannerEmoji: { fontSize: 20 },
+  syncBannerTextColumn: { flex: 1 },
+  syncBannerTitle: { fontSize: 14, fontWeight: '700', color: '#B35D2E', marginBottom: 2 },
+  syncBannerText: { fontSize: 13, color: '#8E6A53', lineHeight: 18 },
+
+// PREMIUM INPUT AREA
+  inputSection: {
+    marginHorizontal: 16, // Matched to hero card margins for perfect alignment
+    marginTop: 20,
+    marginBottom: 24,
   },
   inputHint: {
-    fontSize: 10,
-    letterSpacing: 1.1,
-    color: '#A06A45',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    color: '#B35D2E',
     marginBottom: 10,
+    marginLeft: 4,
   },
   inputRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 10,
-    backgroundColor: '#FFF3E5',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#F1DDC7',
-    padding: 10,
-    marginBottom: 10,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF', // Crisp white contrast against the #FAF3EA app background
+    borderRadius: 20, // Smooth, premium rounding
+    borderWidth: 1.5, // Clear, distinct border
+    borderColor: '#EBD4BB',
+    padding: 6, // Padding pushes the inner items away from the border (the "inset" look)
+    paddingLeft: 16,
+    marginBottom: 14,
+    shadowColor: '#8E6A53',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04, // Extremely subtle shadow just for depth
+    shadowRadius: 8,
+    elevation: 2,
   },
   inputRowFocused: {
-    borderColor: '#D49365',
-    borderWidth: 1,
-    backgroundColor: '#FFF9F1',
+    borderColor: '#B35D2E', // Deep earthy orange on focus
+    shadowOpacity: 0.08,
   },
   textInput: {
     flex: 1,
-    fontSize: 15,
-    color: '#2B180B',
-    minHeight: 38,
-    maxHeight: 90,
-    lineHeight: 20,
+    
+    fontSize: 16,
+    color: '#331E12',
+    
+    minHeight: 40,
+    paddingVertical: 8,
+      textAlignVertical: 'center', // 🔥 key fix
+
   },
   addBtn: {
-    backgroundColor: '#2B180B',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 72,
+    backgroundColor: '#331E12',
+    borderRadius: 14, // Slightly smaller radius than the parent wrapper creates a perfect nested fit
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginLeft: 12,
   },
-  addBtnDisabled: { backgroundColor: '#C9B8A7' },
-  addBtnPressed: { opacity: 0.82, transform: [{ scale: 0.96 }] },
-  addBtnText: { color: '#FFF8EE', fontWeight: '700', fontSize: 14 },
+  addBtnDisabled: { 
+    backgroundColor: '#EBE2D8' 
+  },
+  addBtnPressed: { 
+    transform: [{ scale: 0.96 }], 
+    opacity: 0.9 
+  },
+  addBtnText: { 
+    color: '#FFF8EE', 
+    fontWeight: '700', 
+    fontSize: 14 
+  },
 
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  // CHIPS 
+  chips: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap', 
+    gap: 8,
+    marginLeft: 4,
+  },
   chip: {
-    backgroundColor: '#F7E9D7',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: '#EBD4BB',
   },
-  chipPressed: { opacity: 0.55 },
-  chipText: { fontSize: 12, color: '#6F4B33' },
+  chipPressed: { backgroundColor: '#EBD4BB' },
+  chipText: { fontSize: 13, color: '#6F4B33', fontWeight: '500' },
 
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    marginBottom: 8,
-    marginTop: 6,
+    marginBottom: 12,
+    marginTop: 8,
   },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#2B180B' },
-  sectionCount: { fontSize: 12, color: '#A06A45' },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#331E12' },
+  skeletonWrapper: { paddingHorizontal: 16 },
 
-  emptyState: { alignItems: 'center', paddingTop: 64, paddingHorizontal: 40 },
-  emptyEmoji: { fontSize: 44, marginBottom: 12 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: '#2B180B', marginBottom: 6 },
-  emptySubtitle: { fontSize: 14, color: '#8E6A53', textAlign: 'center' },
+  emptyState: { alignItems: 'center', paddingTop: 40, paddingHorizontal: 40 },
+  emptyIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#FCE7D0', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  emptyEmoji: { fontSize: 32 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#331E12', marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, color: '#8E6A53', textAlign: 'center', lineHeight: 22 },
+
+  // LOAD MORE BUTTON
+  footerContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
+    alignItems: 'center',
+  },
+  loadMoreBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    backgroundColor: 'rgba(233, 139, 86, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(233, 139, 86, 0.3)',
+  },
+  loadMoreBtnPressed: {
+    backgroundColor: 'rgba(233, 139, 86, 0.2)',
+  },
+  loadMoreText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#B35D2E',
+  },
 });

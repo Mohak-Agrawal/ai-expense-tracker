@@ -13,6 +13,17 @@ export interface ParsedExpense {
   merchant: string | null;
 }
 
+const VALID_CATEGORIES = new Set([
+  'Food & Dining',
+  'Transport',
+  'Shopping',
+  'Entertainment',
+  'Bills & Utilities',
+  'Health',
+  'Travel',
+  'Other',
+]);
+
 const SYSTEM_PROMPT = `You are an expense parser. Extract expense information from natural language input.
 
 RULES:
@@ -21,6 +32,14 @@ RULES:
 3. Categorize into EXACTLY one of: Food & Dining, Transport, Shopping, Entertainment, Bills & Utilities, Health, Travel, Other
 4. Description should be a clean short summary
 5. Merchant is the company/store name if mentioned, null otherwise
+6. Food items, beverages, snacks, restaurant orders, and takeout such as burger, pizza, sandwich, coffee, tea, lunch, dinner, breakfast, snacks, cafe, or meal belong in Food & Dining
+
+EXAMPLES:
+- "burger 200" -> Food & Dining
+- "pizza night 450" -> Food & Dining
+- "coffee 180" -> Food & Dining
+- "tea and snacks 120" -> Food & Dining
+- "uber to airport 450" -> Transport
 
 RESPOND ONLY WITH VALID JSON, no markdown, no backticks:
 {"amount": <number>, "currency": "<string>", "category": "<string>", "description": "<string>", "merchant": "<string or null>"}
@@ -55,11 +74,60 @@ function categorize(text: string): string {
     return 'Shopping';
   }
 
-  if (/(restaurant|cafe|coffee|lunch|dinner|breakfast|food|meal|grocer|grocery|restaurant|taj)/.test(lowerText)) {
+  if (/(restaurant|cafe|coffee|tea|lunch|dinner|breakfast|food|meal|grocer|grocery|burger|pizza|sandwich|snack|snacks|fries|shake|juice|biryani|chai|taj)/.test(lowerText)) {
     return 'Food & Dining';
   }
 
   return 'Other';
+}
+
+function normalizeCategory(rawCategory: unknown, fallbackText: string): string {
+  const heuristicCategory = categorize(fallbackText);
+
+  if (typeof rawCategory !== 'string' || rawCategory.trim().length === 0) {
+    return heuristicCategory;
+  }
+
+  const normalizedCategory = rawCategory.trim().toLowerCase();
+
+  if (
+    normalizedCategory === 'food & dining'
+    || normalizedCategory === 'food and dining'
+    || normalizedCategory === 'food'
+    || normalizedCategory === 'dining'
+  ) {
+    return 'Food & Dining';
+  }
+
+  if (normalizedCategory === 'bill' || normalizedCategory === 'bills' || normalizedCategory === 'utilities') {
+    return 'Bills & Utilities';
+  }
+
+  if (normalizedCategory === 'transportation') {
+    return 'Transport';
+  }
+
+  if (normalizedCategory === 'medical') {
+    return 'Health';
+  }
+
+  if (normalizedCategory === 'travelling') {
+    return 'Travel';
+  }
+
+  const titledCategory = Array.from(VALID_CATEGORIES).find(
+    (category) => category.toLowerCase() === normalizedCategory,
+  );
+
+  if (!titledCategory) {
+    return heuristicCategory;
+  }
+
+  if (titledCategory === 'Other' && heuristicCategory !== 'Other') {
+    return heuristicCategory;
+  }
+
+  return titledCategory;
 }
 
 function buildFallbackExpense(text: string): ParsedExpense | null {
@@ -116,10 +184,12 @@ export async function parseExpense(text: string): Promise<ParsedExpense | null> 
       return null;
     }
 
+    const categorySource = [text, parsed.description, parsed.merchant].filter(Boolean).join(' ');
+
     return {
       amount: parsed.amount,
       currency: parsed.currency || 'INR',
-      category: parsed.category || 'Other',
+      category: normalizeCategory(parsed.category, categorySource),
       description: parsed.description,
       merchant: parsed.merchant || null,
     };
