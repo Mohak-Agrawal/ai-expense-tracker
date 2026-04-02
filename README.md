@@ -12,21 +12,12 @@ Time to build: ~1.5 hours (with AI assistance)
 
 ## 📱 Mobile Screenshots
 
-### Home Screen
-
-![Home screen](screenshots/home-screen.png)
-
-### Edit Expense Flow
-
-![Edit expense flow](screenshots/edit-expense.png)
-
-### Success Popup
-
-![Success popup](screenshots/success-popup.png)
-
-### Offline / Sync State
-
-![Offline or sync state](screenshots/offline-mode.png)
+<p align="center">
+	<img src="screenshots/home-screen.png" alt="Home screen" width="23%" />
+	<img src="screenshots/edit-expense.png" alt="Edit expense flow" width="23%" />
+	<img src="screenshots/success-popup.png" alt="Success popup" width="23%" />
+	<img src="screenshots/offline-mode.png" alt="Offline or sync state" width="23%" />
+</p>
 
 ## ✨ Features
 
