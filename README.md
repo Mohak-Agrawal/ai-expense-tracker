@@ -3,12 +3,30 @@
 A full-stack expense tracking app that uses AI to parse natural language input.
 
 Built by: Mohak
-GitHub: [YOUR GITHUB]
+GitHub: https://github.com/Mohak-Agrawal
 Time to build: ~1.5 hours (with AI assistance)
 
 ## 🎥 Demo
 
 [Link to your screen recording]
+
+## 📱 Mobile Screenshots
+
+### Home Screen
+
+![Home screen](screenshots/home-screen.png)
+
+### Edit Expense Flow
+
+![Edit expense flow](screenshots/edit-expense.png)
+
+### Success Popup
+
+![Success popup](screenshots/success-popup.png)
+
+### Offline / Sync State
+
+![Offline or sync state](screenshots/offline-mode.png)
 
 ## ✨ Features
 
@@ -157,13 +175,6 @@ Implemented:
 - Android/web API resolution fixes
 - Success popup and toast-style feedback
 - Unit tests for key backend and mobile logic
-
-Not implemented:
-
-- Authentication / multi-user support
-- CSV export or sharing
-- Budgeting and alerts
-- Analytics charts
 
 ## Notes for Reviewer
 
