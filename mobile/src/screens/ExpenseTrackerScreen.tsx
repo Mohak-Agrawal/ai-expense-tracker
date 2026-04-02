@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  AppState,
   View,
   Text,
   TextInput,
@@ -13,12 +14,18 @@ import {
   Platform,
   StatusBar,
 } from 'react-native';
-import { Expense } from '../types/index';
-import { addExpense, getExpenses } from '../services/api';
-import ExpenseItem from '../components/ExpenseItem';
+import ExpenseItem, { confirmDeleteExpense } from '../components/ExpenseItem';
+import EditExpenseSheet from '../components/EditExpenseSheet';
 import SuccessCard from '../components/SuccessCard';
 import Toast from '../components/Toast';
 import SkeletonItem from '../components/SkeletonItem';
+import {
+  createExpenseEntry,
+  deleteExpenseEntry,
+  loadExpenseSnapshot,
+  updateExpenseEntry,
+} from '../services/expenseRepository';
+import { Expense, ExpenseSnapshot } from '../types/index';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -29,32 +36,59 @@ function getGreeting(): string {
 
 type ToastState = { message: string; type: 'success' | 'error' } | null;
 
+function getErrorMessage(error: unknown, fallbackMessage: string): string {
+  return error instanceof Error ? error.message : fallbackMessage;
+}
+
 export default function ExpenseTrackerScreen() {
   const [input, setInput] = useState('');
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [busyExpenseId, setBusyExpenseId] = useState<number | null>(null);
   const [latestExpense, setLatestExpense] = useState<Expense | null>(null);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [initialLoad, setInitialLoad] = useState(true);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isOffline, setIsOffline] = useState(false);
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
+
+  const applySnapshot = useCallback((snapshot: ExpenseSnapshot) => {
+    setExpenses(snapshot.expenses);
+    setPendingCount(snapshot.pendingCount);
+    setIsOffline(snapshot.isOffline);
+    setLastSyncError(snapshot.lastSyncError);
+  }, []);
 
   const loadExpenses = useCallback(async (showRefreshing = false) => {
     if (showRefreshing) setRefreshing(true);
     try {
-      const data = await getExpenses();
-      setExpenses(data);
-    } catch (error: any) {
-      setToast({ message: error.message || 'Could not load expenses.', type: 'error' });
+      const snapshot = await loadExpenseSnapshot();
+      applySnapshot(snapshot);
+    } catch (error: unknown) {
+      setToast({ message: getErrorMessage(error, 'Could not load expenses.'), type: 'error' });
     } finally {
       setRefreshing(false);
       setInitialLoad(false);
     }
-  }, []);
+  }, [applySnapshot]);
 
   useEffect(() => {
-    loadExpenses();
-  }, []);
+    void loadExpenses();
+  }, [loadExpenses]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void loadExpenses();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [loadExpenses]);
 
   const handleAdd = async () => {
     if (!input.trim() || loading) return;
@@ -62,20 +96,74 @@ export default function ExpenseTrackerScreen() {
     setLoading(true);
     setLatestExpense(null);
     try {
-      const expense = await addExpense(input.trim());
+      const result = await createExpenseEntry(input.trim());
       setInput('');
-      setExpenses(prev => [expense, ...prev]);
-      setLatestExpense(expense);
-    } catch (error: any) {
-      setToast({ message: error.message || 'Could not add expense.', type: 'error' });
+      applySnapshot(result);
+
+      if (result.expense) {
+        setLatestExpense(result.deferred ? null : result.expense);
+      }
+
+      setToast({
+        message: result.deferred ? 'Saved offline. It will sync automatically.' : 'Expense added.',
+        type: 'success',
+      });
+    } catch (error: unknown) {
+      setToast({ message: getErrorMessage(error, 'Could not add expense.'), type: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleted = (id: number) => {
-    setExpenses(prev => prev.filter(e => e.id !== id));
-    setToast({ message: 'Expense removed', type: 'success' });
+  const handleDelete = async (expense: Expense) => {
+    const confirmed = await confirmDeleteExpense(expense);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBusyExpenseId(expense.id);
+
+    try {
+      const result = await deleteExpenseEntry(expense);
+      applySnapshot(result);
+      setToast({
+        message: result.deferred ? 'Removed offline. Sync pending.' : 'Expense removed.',
+        type: 'success',
+      });
+    } catch (error: unknown) {
+      setToast({ message: getErrorMessage(error, 'Could not remove expense.'), type: 'error' });
+    } finally {
+      setBusyExpenseId(null);
+    }
+  };
+
+  const handleEditSave = async (changes: {
+    amount: number;
+    currency: string;
+    category: Expense['category'];
+    description: string;
+    merchant: string | null;
+  }) => {
+    if (!editingExpense) {
+      return;
+    }
+
+    setSavingEdit(true);
+
+    try {
+      const result = await updateExpenseEntry(editingExpense, changes);
+      applySnapshot(result);
+      setEditingExpense(null);
+      setToast({
+        message: result.deferred ? 'Edit saved offline. Sync pending.' : 'Expense updated.',
+        type: 'success',
+      });
+    } catch (error: unknown) {
+      setToast({ message: getErrorMessage(error, 'Could not update expense.'), type: 'error' });
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const totalToday = expenses
@@ -92,7 +180,9 @@ export default function ExpenseTrackerScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F5F5F7" />
+      <View style={styles.backgroundOrbLarge} />
+      <View style={styles.backgroundOrbSmall} />
+      <StatusBar barStyle="dark-content" backgroundColor="#F7EFE5" />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <FlatList
           data={expenses}
@@ -104,35 +194,57 @@ export default function ExpenseTrackerScreen() {
           ListHeaderComponent={
             <View>
               {/* Top bar */}
-              <View style={styles.topbar}>
-                <View>
-                  <Text style={styles.greeting}>{getGreeting()}, Mohak</Text>
-                  <Text style={styles.appTitle}>Expense Tracker</Text>
+              <View style={styles.heroCard}>
+                <View style={styles.topbar}>
+                  <View>
+                    <Text style={styles.greeting}>{getGreeting()}, Mohak</Text>
+                    <Text style={styles.appTitle}>Expense Tracker</Text>
+                    <Text style={styles.heroSubtitle}>Natural language in front, durable local-first sync underneath.</Text>
+                  </View>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>M</Text>
+                  </View>
                 </View>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>M</Text>
+
+                <View style={styles.summaryStrip}>
+                  <View style={styles.statCardAccent}>
+                    <Text style={styles.statLabelLight}>Today</Text>
+                    <Text style={styles.statValueLight}>
+                      ₹{totalToday.toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                  <View style={styles.statCardSoft}>
+                    <Text style={styles.statLabel}>This month</Text>
+                    <Text style={styles.statValue}>
+                      ₹{totalMonth.toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                  <View style={styles.statCardSoft}>
+                    <Text style={styles.statLabel}>Entries</Text>
+                    <Text style={styles.statValue}>{expenses.length}</Text>
+                  </View>
                 </View>
               </View>
 
-              {/* Summary strip */}
-              <View style={styles.summaryStrip}>
-                <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Today</Text>
-                  <Text style={styles.statValue}>
-                    ₹{totalToday.toLocaleString('en-IN')}
-                  </Text>
+              {(pendingCount > 0 || isOffline || lastSyncError) && (
+                <View style={styles.syncBanner}>
+                  <View>
+                    <Text style={styles.syncBannerTitle}>
+                      {isOffline ? 'Offline mode' : 'Sync in progress'}
+                    </Text>
+                    <Text style={styles.syncBannerText}>
+                      {pendingCount > 0
+                        ? `${pendingCount} change${pendingCount === 1 ? '' : 's'} waiting to sync.`
+                        : lastSyncError || 'Trying to reconnect.'}
+                    </Text>
+                  </View>
+                  {pendingCount > 0 && (
+                    <View style={styles.syncPill}>
+                      <Text style={styles.syncPillText}>{pendingCount}</Text>
+                    </View>
+                  )}
                 </View>
-                <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>This month</Text>
-                  <Text style={styles.statValue}>
-                    ₹{totalMonth.toLocaleString('en-IN')}
-                  </Text>
-                </View>
-                <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Entries</Text>
-                  <Text style={styles.statValue}>{expenses.length}</Text>
-                </View>
-              </View>
+              )}
 
               {/* Input card */}
               <View style={styles.inputCard}>
@@ -167,9 +279,8 @@ export default function ExpenseTrackerScreen() {
                   </Pressable>
                 </View>
 
-                {/* Quick-fill chips */}
                 <View style={styles.chips}>
-                  {['Uber 350', 'Coffee 180', 'Netflix 649', 'Groceries 1200'].map(ex => (
+                  {['Uber 350', 'Coffee 180', 'Netflix 649', 'Groceries 1200', 'Medicine 850'].map(ex => (
                     <Pressable
                       key={ex}
                       style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
@@ -200,7 +311,12 @@ export default function ExpenseTrackerScreen() {
             </View>
           }
           renderItem={({ item }) => (
-            <ExpenseItem expense={item} onDeleted={handleDeleted} />
+            <ExpenseItem
+              expense={item}
+              busy={busyExpenseId === item.id}
+              onEdit={setEditingExpense}
+              onDelete={(expense) => void handleDelete(expense)}
+            />
           )}
           ListEmptyComponent={
             initialLoad ? (
@@ -211,7 +327,7 @@ export default function ExpenseTrackerScreen() {
               <View style={styles.emptyState}>
                 <Text style={styles.emptyEmoji}>💸</Text>
                 <Text style={styles.emptyTitle}>No expenses yet</Text>
-                <Text style={styles.emptySubtitle}>Describe what you spent above</Text>
+                <Text style={styles.emptySubtitle}>Describe what you spent above, even if you are temporarily offline.</Text>
               </View>
             )
           }
@@ -226,113 +342,196 @@ export default function ExpenseTrackerScreen() {
           onHide={() => setToast(null)}
         />
       )}
+
+      <EditExpenseSheet
+        expense={editingExpense}
+        visible={editingExpense !== null}
+        saving={savingEdit}
+        onClose={() => setEditingExpense(null)}
+        onSave={handleEditSave}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F5F5F7' },
+  safe: { flex: 1, backgroundColor: '#F7EFE5' },
   flex: { flex: 1 },
-  listContent: { paddingBottom: 40 },
+  listContent: { paddingBottom: 40, paddingTop: 10 },
+
+  backgroundOrbLarge: {
+    position: 'absolute',
+    top: -80,
+    right: -40,
+    width: 220,
+    height: 220,
+    borderRadius: 999,
+    backgroundColor: 'rgba(199, 133, 89, 0.16)',
+  },
+  backgroundOrbSmall: {
+    position: 'absolute',
+    top: 120,
+    left: -40,
+    width: 140,
+    height: 140,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 219, 184, 0.4)',
+  },
+
+  heroCard: {
+    marginHorizontal: 18,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 18,
+    borderRadius: 28,
+    backgroundColor: '#2B180B',
+    shadowColor: '#2B180B',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 5,
+  },
 
   topbar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    paddingHorizontal: 20,
-    paddingTop: 20,
     paddingBottom: 4,
   },
-  greeting: { fontSize: 13, color: '#8E8E93' },
-  appTitle: { fontSize: 24, fontWeight: '600', color: '#1C1C1E', marginTop: 2, letterSpacing: -0.4 },
+  greeting: { fontSize: 13, color: '#D4B89D' },
+  appTitle: { fontSize: 28, fontWeight: '700', color: '#FFF5E9', marginTop: 4, letterSpacing: -0.6 },
+  heroSubtitle: { fontSize: 13, color: '#DABB9D', marginTop: 8, maxWidth: 240, lineHeight: 18 },
   avatar: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: '#AFA9EC',
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: '#F4C38F',
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { fontSize: 14, fontWeight: '600', color: '#26215C' },
+  avatarText: { fontSize: 15, fontWeight: '700', color: '#4B2A11' },
 
   summaryStrip: {
     flexDirection: 'row',
     gap: 10,
-    paddingHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 14,
+    marginTop: 18,
   },
-  statCard: {
+  statCardAccent: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    backgroundColor: '#E98B56',
+    borderRadius: 20,
     padding: 12,
-    borderWidth: 0.5,
-    borderColor: 'rgba(0,0,0,0.07)',
   },
-  statLabel: { fontSize: 11, color: '#8E8E93', marginBottom: 4 },
-  statValue: { fontSize: 15, fontWeight: '600', color: '#1C1C1E' },
+  statCardSoft: {
+    flex: 1,
+    backgroundColor: '#FFF5E8',
+    borderRadius: 20,
+    padding: 12,
+  },
+  statLabelLight: { fontSize: 11, color: '#FFE6D2', marginBottom: 4 },
+  statValueLight: { fontSize: 16, fontWeight: '700', color: '#FFFDF8' },
+  statLabel: { fontSize: 11, color: '#9B765A', marginBottom: 4 },
+  statValue: { fontSize: 15, fontWeight: '700', color: '#2B180B' },
+
+  syncBanner: {
+    marginHorizontal: 18,
+    marginTop: 14,
+    marginBottom: 10,
+    borderRadius: 20,
+    backgroundColor: '#FCE7D0',
+    borderWidth: 1,
+    borderColor: '#EDCFAD',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  syncBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#6A4327',
+    marginBottom: 4,
+  },
+  syncBannerText: {
+    fontSize: 12,
+    color: '#8B6042',
+    maxWidth: 250,
+  },
+  syncPill: {
+    minWidth: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2B180B',
+  },
+  syncPillText: {
+    color: '#FFF5E8',
+    fontWeight: '700',
+  },
 
   inputCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    marginHorizontal: 20,
-    marginBottom: 12,
-    padding: 14,
-    borderWidth: 0.5,
-    borderColor: 'rgba(0,0,0,0.07)',
+    backgroundColor: '#FFF9F1',
+    borderRadius: 24,
+    marginHorizontal: 18,
+    marginBottom: 14,
+    marginTop: 4,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#F0DECA',
   },
   inputHint: {
     fontSize: 10,
-    letterSpacing: 0.8,
-    color: '#AEAEB2',
+    letterSpacing: 1.1,
+    color: '#A06A45',
     marginBottom: 10,
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 10,
-    backgroundColor: '#F5F5F7',
-    borderRadius: 12,
-    borderWidth: 0.5,
-    borderColor: 'rgba(0,0,0,0.07)',
+    backgroundColor: '#FFF3E5',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#F1DDC7',
     padding: 10,
     marginBottom: 10,
   },
   inputRowFocused: {
-    borderColor: 'rgba(83, 74, 183, 0.35)',
+    borderColor: '#D49365',
     borderWidth: 1,
-    backgroundColor: '#FAFAFF',
+    backgroundColor: '#FFF9F1',
   },
   textInput: {
     flex: 1,
-    fontSize: 14,
-    color: '#1C1C1E',
+    fontSize: 15,
+    color: '#2B180B',
     minHeight: 38,
     maxHeight: 90,
     lineHeight: 20,
   },
   addBtn: {
-    backgroundColor: '#534AB7',
-    borderRadius: 10,
+    backgroundColor: '#2B180B',
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 58,
+    minWidth: 72,
   },
-  addBtnDisabled: { backgroundColor: '#C7C7CC' },
+  addBtnDisabled: { backgroundColor: '#C9B8A7' },
   addBtnPressed: { opacity: 0.82, transform: [{ scale: 0.96 }] },
-  addBtnText: { color: '#EEEDFE', fontWeight: '600', fontSize: 14 },
+  addBtnText: { color: '#FFF8EE', fontWeight: '700', fontSize: 14 },
 
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   chip: {
-    backgroundColor: '#F5F5F7',
+    backgroundColor: '#F7E9D7',
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderWidth: 0.5,
-    borderColor: 'rgba(0,0,0,0.07)',
+    borderWidth: 1,
+    borderColor: '#EBD4BB',
   },
   chipPressed: { opacity: 0.55 },
-  chipText: { fontSize: 12, color: '#6B6B6B' },
+  chipText: { fontSize: 12, color: '#6F4B33' },
 
   sectionHeader: {
     flexDirection: 'row',
@@ -342,11 +541,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 6,
   },
-  sectionTitle: { fontSize: 15, fontWeight: '600', color: '#1C1C1E' },
-  sectionCount: { fontSize: 12, color: '#AEAEB2' },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#2B180B' },
+  sectionCount: { fontSize: 12, color: '#A06A45' },
 
   emptyState: { alignItems: 'center', paddingTop: 64, paddingHorizontal: 40 },
   emptyEmoji: { fontSize: 44, marginBottom: 12 },
-  emptyTitle: { fontSize: 17, fontWeight: '600', color: '#1C1C1E', marginBottom: 6 },
-  emptySubtitle: { fontSize: 14, color: '#8E8E93', textAlign: 'center' },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: '#2B180B', marginBottom: 6 },
+  emptySubtitle: { fontSize: 14, color: '#8E6A53', textAlign: 'center' },
 });

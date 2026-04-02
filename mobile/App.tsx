@@ -1,10 +1,11 @@
-import React from 'react'
-import ExpenseTrackerScreen from './src/screens/ExpenseTrackerScreen'
+import React from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import ExpenseTrackerScreen from './src/screens/ExpenseTrackerScreen';
 
-const App = () => {
+export default function App() {
   return (
-    <ExpenseTrackerScreen/>
-  )
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ExpenseTrackerScreen />
+    </GestureHandlerRootView>
+  );
 }
-
-export default App

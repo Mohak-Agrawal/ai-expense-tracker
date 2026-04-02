@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "my-app",
-    "slug": "my-app",
+    "name": "ai-expense-tracker",
+    "slug": "ai-expense-tracker",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "aiexpensetracker",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {

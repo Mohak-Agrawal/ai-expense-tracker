@@ -11,7 +11,7 @@ export default function SkeletonItem() {
         Animated.timing(shimmer, { toValue: 0.5, duration: 750, useNativeDriver: true }),
       ])
     ).start();
-  }, []);
+  }, [shimmer]);
 
   return (
     <Animated.View style={[styles.container, { opacity: shimmer }]}>

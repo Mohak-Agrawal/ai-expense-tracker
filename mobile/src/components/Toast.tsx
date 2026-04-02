@@ -31,7 +31,7 @@ export default function Toast({ message, type, onHide }: Props) {
     }, 2600);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [onHide, opacity, translateY]);
 
   return (
     <Animated.View

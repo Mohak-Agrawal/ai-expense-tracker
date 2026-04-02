@@ -26,7 +26,7 @@ export default function SuccessCard({ expense, onDismiss }: Props) {
     }, 2800);
 
     return () => clearTimeout(hideTimer);
-  }, []);
+  }, [onDismiss, opacity, translateY]);
 
   const emoji = CATEGORY_EMOJIS[expense.category] || '📦';
 

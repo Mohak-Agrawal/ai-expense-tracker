@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express from 'express';
+import { errorHandler, notFoundHandler } from './errors';
 import expenseRoutes from './routes/expenses';
 
 export function createApp() {
@@ -13,6 +14,8 @@ export function createApp() {
   });
 
   app.use('/api/expenses', expenseRoutes);
+  app.use(notFoundHandler);
+  app.use(errorHandler);
 
   return app;
 }

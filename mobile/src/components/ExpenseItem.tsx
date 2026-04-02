@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React from 'react';
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { deleteExpense } from '../services/api';
 import { CATEGORY_EMOJIS, Expense } from '../types/index';
 
 interface Props {
   expense: Expense;
-  onDeleted: (id: number) => void;
+  busy?: boolean;
+  onEdit: (expense: Expense) => void;
+  onDelete: (expense: Expense) => void;
 }
 
 function timeAgo(dateString: string): string {
@@ -20,10 +21,10 @@ function timeAgo(dateString: string): string {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
-function confirmDeleteExpense(expense: Expense): Promise<boolean> {
+export async function confirmDeleteExpense(expense: Expense): Promise<boolean> {
   const message = `Remove ₹${expense.amount} – ${expense.description}?`;
 
-  if (Platform.OS === 'web') {
+  if (typeof window !== 'undefined' && Platform.OS === 'web') {
     return Promise.resolve(window.confirm(`Delete Expense?\n\n${message}`));
   }
 
@@ -35,34 +36,28 @@ function confirmDeleteExpense(expense: Expense): Promise<boolean> {
   });
 }
 
-export default function ExpenseItem({ expense, onDeleted }: Props) {
-  const [deleting, setDeleting] = useState(false);
-
-  const handleDelete = () => {
-    void (async () => {
-      const confirmed = await confirmDeleteExpense(expense);
-      if (!confirmed) return;
-
-      setDeleting(true);
-      try {
-        await deleteExpense(expense.id);
-        onDeleted(expense.id);
-      } catch (error: any) {
-        Alert.alert('Error', error.message || 'Failed to delete.');
-        setDeleting(false);
-      }
-    })();
-  };
-
+export default function ExpenseItem({ expense, busy = false, onEdit, onDelete }: Props) {
   const emoji = CATEGORY_EMOJIS[expense.category] || '📦';
+  const syncLabel = expense.syncStatus === 'pending-create'
+    ? 'Queued'
+    : expense.syncStatus === 'pending-update'
+      ? 'Saving'
+      : null;
 
   return (
     <View style={styles.container}>
-      <View style={styles.left}>
+      <View style={[styles.left, syncLabel && styles.leftPending]}>
         <Text style={styles.emoji}>{emoji}</Text>
       </View>
       <View style={styles.middle}>
-        <Text style={styles.category}>{expense.category}</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.category}>{expense.category}</Text>
+          {syncLabel && (
+            <View style={styles.syncBadge}>
+              <Text style={styles.syncBadgeText}>{syncLabel}</Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.description} numberOfLines={1}>
           {expense.description}
           {expense.merchant ? ` · ${expense.merchant}` : ''}
@@ -71,18 +66,14 @@ export default function ExpenseItem({ expense, onDeleted }: Props) {
       </View>
       <View style={styles.right}>
         <Text style={styles.amount}>₹{expense.amount.toLocaleString('en-IN')}</Text>
-        <TouchableOpacity
-          onPress={handleDelete}
-          disabled={deleting}
-          style={styles.deleteBtn}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          activeOpacity={0.5}
-        >
-          {deleting
-            ? <ActivityIndicator size="small" color="#C7C7CC" />
-            : <Ionicons name="trash-outline" size={15} color="#C7C7CC" />
-          }
-        </TouchableOpacity>
+        <View style={styles.actions}>
+          <Pressable onPress={() => onEdit(expense)} disabled={busy} style={styles.iconButton}>
+            <Ionicons name="create-outline" size={16} color="#946847" />
+          </Pressable>
+          <Pressable onPress={() => onDelete(expense)} disabled={busy} style={styles.iconButton}>
+            <Ionicons name="trash-outline" size={16} color="#C66A4A" />
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -92,53 +83,83 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    marginHorizontal: 16,
-    marginVertical: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: '#FFF9F1',
+    borderRadius: 22,
+    padding: 16,
+    marginHorizontal: 18,
+    marginVertical: 6,
+    borderWidth: 1,
+    borderColor: '#F0DECA',
+    shadowColor: '#85572E',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 3,
   },
   left: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: '#F5F5F7',
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: '#F5EBDD',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
+  leftPending: {
+    backgroundColor: '#F6D3AF',
+  },
   emoji: { fontSize: 20 },
   middle: { flex: 1 },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
   category: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#1C1C1E',
-    marginBottom: 2,
+    color: '#2E1C0E',
+  },
+  syncBadge: {
+    backgroundColor: '#2E1C0E',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  syncBadgeText: {
+    fontSize: 10,
+    color: '#FFF8EE',
+    fontWeight: '700',
   },
   description: {
     fontSize: 12,
-    color: '#6B6B6B',
+    color: '#7A5B47',
     marginBottom: 3,
   },
   time: {
     fontSize: 11,
-    color: '#AEAEB2',
+    color: '#B0896B',
   },
   right: {
     alignItems: 'flex-end',
-    gap: 6,
+    gap: 10,
   },
   amount: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '700',
-    color: '#1C1C1E',
+    color: '#2E1C0E',
   },
-  deleteBtn: {
-    padding: 2,
+  actions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  iconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F6EBDD',
   },
 });
