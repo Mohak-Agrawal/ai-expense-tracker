@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CATEGORY_EMOJIS, Expense } from '../types/index';
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function SuccessCard({ expense, onDismiss }: Props) {
+  const insets = useSafeAreaInsets();
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-24)).current;
   const scale = useRef(new Animated.Value(0.96)).current;
@@ -34,7 +36,13 @@ export default function SuccessCard({ expense, onDismiss }: Props) {
   const emoji = CATEGORY_EMOJIS[expense.category] || '📦';
 
   return (
-    <Animated.View style={[styles.shell, { opacity, transform: [{ translateY }, { scale }] }]} pointerEvents="none">
+    <Animated.View
+      style={[
+        styles.shell,
+        { top: Math.max(insets.top + 12, 20), opacity, transform: [{ translateY }, { scale }] },
+      ]}
+      pointerEvents="none"
+    >
       <View style={styles.glow} />
       <View style={styles.container}>
         <View style={styles.header}>
@@ -67,7 +75,6 @@ export default function SuccessCard({ expense, onDismiss }: Props) {
 const styles = StyleSheet.create({
   shell: {
     position: 'absolute',
-    top: 18,
     left: 16,
     right: 16,
     zIndex: 30,
