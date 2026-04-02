@@ -1,55 +1,42 @@
 # AI Expense Tracker
 
-Full-stack starter for an AI expense tracker.
+A full-stack expense tracking app that uses AI to parse natural language input.
 
-## Structure
-
-- `backend/` Node.js, Express, TypeScript, SQLite
-- `mobile/` Expo React Native, TypeScript, router-based navigation
-
-## Setup
-
-- Backend: `cd backend && npm install && npm run dev`
-- Mobile: `cd mobile && npm install && npm start`
-# 💰 AI Expense Tracker
-
-A full-stack mobile app that lets you log expenses using **natural language** — no forms, no dropdowns. Just type what you spent and AI handles the rest.
-
-Built by: **Mohak**  
-Time to build: ~1.5 hours (with AI assistance)  
-Stack: React Native · Node.js · SQLite · Groq (LLaMA 3.1)
-
----
+Built by: Mohak
+GitHub: [YOUR GITHUB]
+Time to build: ~1.5 hours (with AI assistance)
 
 ## 🎥 Demo
 
-> Add a screen recording link here after recording
+[Link to your screen recording]
 
-**What it does:**
-- "Spent 850 on lunch with client at Taj" → ₹850, 🍔 Food & Dining, Merchant: Taj
-- "Uber to airport 450" → ₹450, 🚗 Transport, Merchant: Uber
-- "Netflix 649" → ₹649, 📺 Entertainment, Merchant: Netflix
-- "coffee" → ❌ Error: no amount detected
+## ✨ Features
 
----
+- Natural-language expense entry such as `Uber to airport 450` or `Lunch at Taj 850`
+- AI-assisted categorization with Gemini
+- Local fallback parsing when AI is unavailable
+- Edit and delete expense flows
+- Offline-first mobile experience with local cache and deferred sync queue
+- Success popup and toast-style feedback
+- Responsive Expo app for web, iOS, and Android
+- Unit tests for backend routes, AI parsing behavior, offline queue logic, and local parsing
 
 ## 🛠️ Tech Stack
 
-| Layer | Tech |
-|-------|------|
-| Mobile | React Native + Expo + TypeScript |
-| Backend | Node.js + Express + TypeScript |
-| Database | SQLite (better-sqlite3) |
-| AI | Groq API (LLaMA 3.1 70B) — free tier |
+- Mobile: React Native, Expo, TypeScript
+- Backend: Node.js, Express, TypeScript
+- Database: SQLite
+- AI: Gemini API
+- Testing: Vitest, Supertest
 
----
-
-## 🚀 Setup
+## 🚀 Setup Instructions
 
 ### Prerequisites
+
 - Node.js 18+
-- Expo CLI: `npm install -g expo-cli`
-- A free [Groq API key](https://console.groq.com)
+- npm or yarn
+- Expo CLI or Expo-compatible simulator / emulator / Expo Go
+- Gemini API key
 
 ### Backend
 
@@ -57,13 +44,17 @@ Stack: React Native · Node.js · SQLite · Groq (LLaMA 3.1)
 cd backend
 npm install
 cp .env.example .env
-# Open .env and add your GROQ_API_KEY
+# Add GEMINI_API_KEY to .env
 npm run dev
 ```
 
-Server starts at `http://localhost:3000`
+The backend listens on port `3000` and binds to `0.0.0.0`, so it can be reached by web, emulator, and device clients on your local network.
 
-Verify: `curl http://localhost:3000/health`
+Optional health check:
+
+```bash
+curl http://localhost:3000/health
+```
 
 ### Mobile
 
@@ -71,102 +62,111 @@ Verify: `curl http://localhost:3000/health`
 cd mobile
 npm install
 cp .env.example .env
-# If using physical device, update EXPO_PUBLIC_API_URL to your local IP
 npm start
 ```
 
-Scan the QR code with **Expo Go** app (iOS/Android).
+Default API behavior:
 
-> **Physical device tip:** Replace `localhost` in `.env` with your machine's IP  
-> (find it with `ipconfig` on Windows or `ifconfig` on Mac/Linux)
+- Web uses `http://localhost:3000`
+- Android emulator uses `http://10.0.2.2:3000`
+- Expo/native clients try to resolve the host machine automatically
 
----
+If you are testing on a physical device, set `EXPO_PUBLIC_API_URL` in `mobile/.env` to your machine's LAN IP, for example:
+
+```bash
+EXPO_PUBLIC_API_URL=http://192.168.1.10:3000
+```
 
 ## 📁 Project Structure
 
-```
+The project is split into a backend API and an Expo mobile client.
+
+```text
 ai-expense-tracker/
 ├── backend/
-│   └── src/
-│       ├── index.ts              # Express server entry
-│       ├── routes/expenses.ts   # REST API endpoints
-│       ├── services/aiService.ts # AI parsing (Groq/OpenAI/Anthropic)
-│       └── database/db.ts       # SQLite CRUD operations
-│
+│   ├── src/
+│   │   ├── app.ts
+│   │   ├── index.ts
+│   │   ├── database/db.ts
+│   │   ├── routes/expenses.ts
+│   │   └── services/aiService.ts
+│   └── .env.example
 ├── mobile/
 │   ├── App.tsx
+│   ├── app.json
+│   ├── .env.example
 │   └── src/
-│       ├── screens/ExpenseTrackerScreen.tsx  # Main UI
 │       ├── components/
-│       │   ├── ExpenseItem.tsx   # Individual expense card
-│       │   └── SuccessCard.tsx   # Post-add success feedback
-│       ├── services/api.ts       # HTTP client with timeout
-│       └── types/index.ts        # Shared TypeScript interfaces
-│
+│       ├── screens/ExpenseTrackerScreen.tsx
+│       ├── services/
+│       ├── types/
+│       └── utils/
 └── README.md
 ```
 
----
-
 ## 🤖 AI Prompt Design
 
-**System prompt used for expense parsing:**
+I used this system prompt for expense parsing:
 
-```
+```text
 You are an expense parser. Extract expense information from natural language input.
 
 RULES:
 1. Extract the amount as a number (no currency symbols)
-2. Default currency is INR unless explicitly mentioned
-3. Categorize into EXACTLY one of: Food & Dining, Transport, Shopping,
-   Entertainment, Bills & Utilities, Health, Travel, Other
-4. Description should be a clean summary (not the raw input)
+2. Default currency is INR unless explicitly mentioned (USD, EUR, etc.)
+3. Categorize into EXACTLY one of: Food & Dining, Transport, Shopping, Entertainment, Bills & Utilities, Health, Travel, Other
+4. Description should be a clean short summary
 5. Merchant is the company/store name if mentioned, null otherwise
+6. Food items, beverages, snacks, restaurant orders, and takeout such as burger, pizza, sandwich, coffee, tea, lunch, dinner, breakfast, snacks, cafe, or meal belong in Food & Dining
 
-RESPOND ONLY WITH VALID JSON...
+EXAMPLES:
+- "burger 200" -> Food & Dining
+- "pizza night 450" -> Food & Dining
+- "coffee 180" -> Food & Dining
+- "tea and snacks 120" -> Food & Dining
+- "uber to airport 450" -> Transport
+
+RESPOND ONLY WITH VALID JSON, no markdown, no backticks.
 ```
 
-**Why this approach:**  
-Forcing JSON-only output eliminates parsing complexity. Strict category enumeration prevents hallucinated categories. Setting `temperature: 0.1` ensures consistent, deterministic outputs — critical for a financial app.
+Why this worked well:
 
----
+- The prompt forces a strict schema so the backend can parse the response safely.
+- Category constraints reduce hallucinated labels.
+- Concrete examples improve classification for ambiguous food inputs.
+- The app still has deterministic fallback parsing when AI is unavailable, which keeps offline creation reliable.
 
-## ⏱️ Time Breakdown
+## ✅ Verification
 
-| Task | Time |
-|------|------|
-| Project setup + config | 8 min |
-| Database schema + CRUD | 6 min |
-| AI integration service | 12 min |
-| Backend API endpoints | 10 min |
-| React Native UI | 28 min |
-| Testing + debugging | 12 min |
-| README + polish | 10 min |
-| **Total** | **~1.5 hours** |
+Run these before submitting:
 
----
+```bash
+cd backend && npm test && npm run build
+cd mobile && npm test && npm run lint
+```
 
-## 🔮 What I'd Add With More Time
+## Current Scope
 
-- [ ] Monthly spend summary with category breakdown chart
-- [ ] Budget alerts (notify when a category exceeds limit)
-- [ ] Export to CSV / WhatsApp share
-- [ ] Edit expense functionality
-- [ ] Offline support with sync queue
-- [ ] Auth (multi-user support)
+Implemented:
 
----
+- Natural-language add flow
+- Expense list with category icons and totals
+- Edit expense functionality
+- Delete expense functionality
+- Offline cache and queued sync
+- Android/web API resolution fixes
+- Success popup and toast-style feedback
+- Unit tests for key backend and mobile logic
 
-## 🤖 AI Tools Used
+Not implemented:
 
-- **Claude (claude.ai):** Architecture planning, full code generation for backend and mobile components, prompt engineering for the AI parser
-- **Groq API (LLaMA 3.1 70B):** Runtime expense text classification
+- Authentication / multi-user support
+- CSV export or sharing
+- Budgeting and alerts
+- Analytics charts
 
-**Most helpful prompt:**  
-*"Create a TypeScript Express route that receives natural language text, calls an AI parser service, validates the response, saves to SQLite, and returns structured JSON — with proper error handling and HTTP status codes"*
+## Notes for Reviewer
 
----
-
-## 📜 License
-
-MIT — use this freely for your own projects!
+- Existing data is stored in `backend/expenses.db`
+- Mobile state is cached locally using AsyncStorage
+- If AI is not configured, categorization still works through fallback heuristics
